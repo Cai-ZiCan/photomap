@@ -59,7 +59,7 @@ pm2 start npm --name photomap -- start
 ## 管理端与安全清单
 
 - [ ] 首次访问 `/admin` 设置了强密码（≥12 位）；
-- [ ] 公网部署建议启用 HTTPS（投稿含联系方式）；
+- [ ] 公网部署建议启用 HTTPS（投稿可能含邮箱联系方式）；
 - [ ] 定期备份 `data/`（或 `sqlite3 data/photo-map.db ".backup ..."` + uploads）；
 - [ ] 不要把 `server/.env` 提交进 git（已 gitignore）。
 

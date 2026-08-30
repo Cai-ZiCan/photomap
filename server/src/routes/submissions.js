@@ -56,6 +56,12 @@ r.post('/', limiter, upload.array('photos', config.upload.maxFiles), async (req,
     if (t && !themeIds.includes(t.id)) themeIds.push(t.id);
   }
 
+  // 联系方式：选填，仅支持邮箱
+  const submitterContact = str(b.submitter_contact, 120);
+  if (submitterContact && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(submitterContact)) {
+    throw badReq('联系方式仅支持邮箱，请填写有效的邮箱地址');
+  }
+
   const info = run(
     `INSERT INTO spots (name, description, lat, lng, address, region, tips, months, status, source,
                         submitter_name, submitter_contact)
@@ -69,7 +75,7 @@ r.post('/', limiter, upload.array('photos', config.upload.maxFiles), async (req,
     str(b.tips, 1000),
     JSON.stringify(months),
     str(b.submitter_name, 40),
-    str(b.submitter_contact, 120)
+    submitterContact
   );
   const spotId = Number(info.lastInsertRowid);
 

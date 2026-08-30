@@ -77,8 +77,8 @@
             <input v-model="form.submitter_name" maxlength="40" placeholder="将展示在点位来源中" />
           </label>
           <label class="field">
-            <span>联系方式</span>
-            <input v-model="form.submitter_contact" maxlength="120" placeholder="微信/QQ/邮箱（仅管理员可见）" />
+            <span>联系邮箱（选填）</span>
+            <input v-model="form.submitter_contact" type="email" maxlength="120" placeholder="仅支持邮箱（仅管理员可见）" />
           </label>
         </div>
 
@@ -190,6 +190,10 @@ async function submit() {
   errorMsg.value = '';
   if (!form.name.trim()) return (errorMsg.value = '请填写点位名称');
   if (location.value.lat == null || location.value.lng == null) return (errorMsg.value = '请在地图上点选位置');
+  const contact = form.submitter_contact.trim();
+  if (contact && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
+    return (errorMsg.value = '联系方式仅支持邮箱，请填写有效的邮箱地址');
+  }
 
   const fd = new FormData();
   fd.set('name', form.name);
@@ -271,6 +275,7 @@ h1 {
 }
 input[type='text'],
 input:not([type]),
+input[type='email'],
 input[type='number'],
 textarea {
   width: 100%;
