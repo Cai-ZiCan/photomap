@@ -1,0 +1,211 @@
+:root {
+  --bg: #f2f4f7;
+  --panel: #ffffff;
+  --border: #e2e6ea;
+  --text: #1c2430;
+  --muted: #6b7480;
+  --primary: #2563eb;
+  --primary-weak: #dbe7fe;
+  --danger: #d9534f;
+  --ok: #2e9e5b;
+  --radius: 10px;
+  --shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- 按钮 ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: filter 0.12s ease;
+}
+.btn:hover {
+  filter: brightness(0.96);
+}
+.btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.btn.primary:hover {
+  filter: brightness(1.08);
+}
+.btn.ghost {
+  background: transparent;
+}
+.btn.danger {
+  color: var(--danger);
+  border-color: #f0c4c2;
+}
+.btn.danger:hover {
+  background: #fdf1f0;
+}
+.btn.ok {
+  color: var(--ok);
+  border-color: #bfe3cd;
+}
+.btn.ok:hover {
+  background: #f0faf4;
+}
+.btn.big {
+  padding: 10px 22px;
+  font-size: 14.5px;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn.mini {
+  padding: 4px 9px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+
+/* ---------- 表单 ---------- */
+
+input,
+textarea,
+select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13.5px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--text);
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid var(--primary-weak);
+  border-color: var(--primary);
+}
+
+/* ---------- 徽标 / 标签 ---------- */
+
+.badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.badge.published {
+  background: #e3f5ea;
+  color: var(--ok);
+}
+.badge.pending {
+  background: #fdf3e0;
+  color: #b97c14;
+}
+.badge.rejected {
+  background: #fdeceb;
+  color: var(--danger);
+}
+.badge.archived {
+  background: #eef1f4;
+  color: var(--muted);
+}
+.badge.creator {
+  background: #e8f0fe;
+  color: var(--primary);
+}
+.badge.user {
+  background: #f3e8fd;
+  color: #7c3aed;
+}
+.badge.crawler {
+  background: #e0f2f1;
+  color: #00796b;
+}
+
+/* ---------- 表格 ---------- */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #f0f2f5;
+  vertical-align: middle;
+}
+.table tr:hover td {
+  background: #fafbfc;
+}
+.table .cover {
+  width: 52px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #eef1f4;
+  display: block;
+}
+
+/* ---------- OpenLayers 控件微调 ---------- */
+
+.ol-control button {
+  border-radius: 6px !important;
+}
+.ol-scale-line {
+  left: 12px !important;
+  bottom: 14px !important;
+}
+.ol-attribution {
+  right: 12px !important;
+  bottom: 12px !important;
+}
+
+/* ---------- 滚动条 ---------- */
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c9cfd6;
+  border-radius: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

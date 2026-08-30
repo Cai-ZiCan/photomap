@@ -1,0 +1,19 @@
+{
+  "name": "photomap",
+  "private": true,
+  "version": "0.1.0",
+  "description": "摄影地图 —— 公开 WebGIS 摄影观赏点位地图（赏花/秋叶/雪景/星空等主题）",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n SERVER,WEB -c blue,green \"npm run dev -w server\" \"npm run dev -w web\"",
+    "build": "npm run build -w web",
+    "start": "npm run start -w server",
+    "seed": "npm run seed -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
