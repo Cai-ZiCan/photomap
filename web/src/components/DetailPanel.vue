@@ -10,7 +10,14 @@
 
       <template v-else>
         <div v-if="spot.photos.length" class="gallery">
-          <img class="main" :src="photos[idx].path" :alt="spot.name" />
+          <div class="main-frame">
+            <img class="main" :src="photos[idx].path" :alt="spot.name" />
+            <span
+              v-if="photos[idx].credit"
+              class="credit"
+              :title="'图片作者：' + photos[idx].credit"
+            >📷 {{ photos[idx].credit }}</span>
+          </div>
           <div v-if="spot.photos.length > 1" class="thumbs">
             <img
               v-for="(p, i) in photos"
@@ -21,7 +28,6 @@
               @click="idx = i"
             />
           </div>
-          <span v-if="photos[idx].credit" class="credit">📷 {{ photos[idx].credit }}</span>
         </div>
         <div v-else class="gallery placeholder" :style="{ background: gradient }">
           <span>{{ spot.themes[0]?.icon || '📷' }}</span>
@@ -42,6 +48,12 @@
           </div>
 
           <p v-if="spot.description" class="desc">{{ spot.description }}</p>
+          <p v-if="spot.description && textCredit" class="text-credit">
+            <span class="tc-dash">——</span>
+            <span class="tc-label">文案</span>
+            <a v-if="textCredit.href" :href="textCredit.href" target="_blank" rel="noopener">{{ textCredit.label }}</a>
+            <span v-else>{{ textCredit.label }}</span>
+          </p>
 
           <div v-if="spot.address" class="kv"><label>地址</label><span>{{ spot.address }}</span></div>
           <div v-if="spot.tips" class="kv"><label>贴士</label><span>{{ spot.tips }}</span></div>
@@ -85,6 +97,24 @@ const error = ref('');
 const idx = ref(0);
 
 const photos = computed(() => spot.value?.photos ?? []);
+
+// 文案作者标注：网友投稿 → @昵称；网络采集 → 来源说明/原文链接；制作者原创不标
+const textCredit = computed(() => {
+  const s = spot.value;
+  if (!s) return null;
+  if (s.source === 'user' && s.submitter_name) {
+    return { label: `@${s.submitter_name}`, href: null };
+  }
+  if (s.source === 'crawler') {
+    let label = s.source_note || '';
+    if (!label && s.source_url) {
+      try { label = `整理自 ${new URL(s.source_url).hostname}`; } catch { label = '整理自网络'; }
+    }
+    if (!label) return null;
+    return { label, href: s.source_url || null };
+  }
+  return null;
+});
 const gradient = computed(() => {
   const c = spot.value?.themes[0]?.color || '#2b7de9';
   return `linear-gradient(135deg, ${c}55, ${c})`;
@@ -178,6 +208,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
   display: block;
   background: #eef1f4;
 }
+.main-frame {
+  position: relative;
+}
 .gallery.placeholder {
   height: 150px;
   display: grid;
@@ -202,15 +235,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 .thumbs img.active {
   border-color: var(--primary);
 }
+/* 图片作者：主图底端 50% 不透明度矮胶囊条 */
 .credit {
   position: absolute;
   left: 10px;
-  bottom: 8px;
+  bottom: 10px;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
+  line-height: 1;
   color: #fff;
-  background: rgba(0, 0, 0, 0.45);
-  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 6px 10px;
   border-radius: 999px;
+  backdrop-filter: blur(3px);
+  pointer-events: none;
 }
 .body {
   padding: 14px 16px 22px;
@@ -257,6 +298,38 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
   font-size: 13.5px;
   line-height: 1.75;
   color: var(--text);
+}
+/* 文案作者：正文末尾标注行 */
+.text-credit {
+  margin: -6px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.text-credit .tc-dash {
+  color: var(--border);
+  letter-spacing: -1px;
+}
+.text-credit .tc-label {
+  flex: none;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 7px;
+}
+.text-credit a {
+  color: var(--primary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.text-credit a:hover {
+  text-decoration: underline;
 }
 .kv {
   display: flex;

@@ -224,6 +224,10 @@ r.post('/spots/:id/status', requireAdmin, (req, res) => {
      WHERE id = ?`,
     status, note, note, status, id
   );
+  // 网友投稿通过发布时，投稿人昵称即为图片作者，自动补署名（不覆盖已填写的 credit）
+  if (status === 'published' && spot.source === 'user' && spot.submitter_name) {
+    run("UPDATE photos SET credit = ? WHERE spot_id = ? AND (credit IS NULL OR credit = '')", `@${spot.submitter_name}`, id);
+  }
   res.json(spotWithRelations(q1('SELECT * FROM spots WHERE id = ?', id)));
 });
 
