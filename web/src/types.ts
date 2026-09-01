@@ -15,6 +15,12 @@ export interface SpotTheme {
   icon: string;
 }
 
+export interface SpotSibling {
+  id: number;
+  name: string;
+  coverThumb?: string | null;
+}
+
 export interface SpotListItem {
   id: number;
   name: string;
@@ -26,6 +32,8 @@ export interface SpotListItem {
   themes: SpotTheme[];
   cover: string | null;
   coverThumb: string | null;
+  groupSize?: number;
+  siblings?: SpotSibling[];
 }
 
 export interface SpotPhoto {
@@ -48,10 +56,12 @@ export interface SpotDetail extends SpotListItem {
   review_note: string;
   featured_photo_id: number | null;
   seed: number;
+  group_key?: string | null;
   created_at: string;
   updated_at: string;
   reviewed_at: string | null;
   photos: SpotPhoto[];
+  siblings: SpotSibling[];
 }
 
 export interface AdminState {
@@ -78,6 +88,8 @@ export interface AiExtractResult {
   draft: AiDraft;
   title: string;
   images: string[];
+  originalText: string;
+  useOriginal: boolean;
 }
 
 export interface AiDraft {
@@ -88,7 +100,19 @@ export interface AiDraft {
   themes: string[];
   months: number[];
   tips: string;
+  author?: string;
   source_url?: string;
+}
+
+export interface NearbySpot {
+  id: number;
+  name: string;
+  lat: number;
+  lng: number;
+  status: string;
+  source: string;
+  group_key: string | null;
+  distance: number;
 }
 
 export interface ImportResult {

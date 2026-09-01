@@ -48,6 +48,7 @@ db.exec(`
     review_note        TEXT NOT NULL DEFAULT '',
     featured_photo_id  INTEGER,
     seed               INTEGER NOT NULL DEFAULT 0,
+    group_key          TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at         TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     reviewed_at        TEXT
@@ -73,6 +74,15 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_photos_spot ON photos(spot_id);
 `);
+
+// 轻量迁移：为旧库补充 spots.group_key（手动并入同一点位组的标识）
+{
+  const cols = db.prepare('PRAGMA table_info(spots)').all();
+  if (!cols.some((c) => c.name === 'group_key')) {
+    db.exec('ALTER TABLE spots ADD COLUMN group_key TEXT');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_spots_group_key ON spots(group_key)');
+}
 
 export function q(sql, ...params) {
   return db.prepare(sql).all(...params);

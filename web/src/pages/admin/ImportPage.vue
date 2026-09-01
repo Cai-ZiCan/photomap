@@ -22,8 +22,8 @@ AI_VISION_MODEL=glm-4v-plus</pre>
 
       <div class="card">
         <label v-if="mode === 'url'" class="field">
-          <span>网页链接（微信公众号文章、博客、旅游攻略等）</span>
-          <input v-model="url" placeholder="https://mp.weixin.qq.com/s/…" />
+          <span>网页链接（小红书笔记、微信公众号文章、博客、旅游攻略等）</span>
+          <input v-model="url" placeholder="https://www.xiaohongshu.com/explore/… 或 https://mp.weixin.qq.com/s/…" />
         </label>
         <label v-else class="field">
           <span>文本内容（聊天记录里的点位描述、游记片段等）</span>
@@ -42,19 +42,61 @@ AI_VISION_MODEL=glm-4v-plus</pre>
           <label class="field"><span>名称</span><input v-model="draft.name" /></label>
           <label class="field"><span>行政区</span><input v-model="draft.region" placeholder="如：浙江省杭州市西湖区" /></label>
         </div>
-        <label class="field"><span>介绍</span><textarea v-model="draft.description" rows="4"></textarea></label>
+
+        <label class="field">
+          <span>
+            介绍
+            <span v-if="originalText" class="desc-toggle">
+              <button type="button" :class="{ active: descSource === 'original' }" @click="setDescSource('original')">保留原文</button>
+              <button type="button" :class="{ active: descSource === 'ai' }" @click="setDescSource('ai')">AI 整理</button>
+            </span>
+            <em v-else-if="aiDescription" class="muted">（原文未抓到，使用 AI 整理稿）</em>
+          </span>
+          <textarea v-model="draft.description" rows="7"></textarea>
+        </label>
+
         <label class="field"><span>地址</span><input v-model="draft.address" /></label>
         <label class="field"><span>贴士</span><textarea v-model="draft.tips" rows="2"></textarea></label>
+
         <div class="grid2">
-          <label class="field"><span>建议专题（逗号分隔，会自动匹配已有专题）</span><input v-model="themesText" /></label>
-          <label class="field"><span>最佳月份（逗号分隔 1-12）</span><input v-model="monthsText" /></label>
+          <label class="field"><span>原文作者 / 博主昵称（用作文案署名）</span><input v-model="draft.author" maxlength="40" /></label>
+          <label class="field"><span>图片作者（默认应用到本次导入的图片）</span><input v-model="photoCredit" maxlength="100" /></label>
+        </div>
+
+        <div class="field">
+          <span>专题（AI 已自动勾选，可调整）</span>
+          <div class="chips">
+            <button
+              v-for="t in themes"
+              :key="t.slug"
+              type="button"
+              class="chip"
+              :class="{ active: draft.themes.includes(t.slug) }"
+              :style="draft.themes.includes(t.slug) ? { background: t.color, borderColor: t.color } : {}"
+              @click="toggleTheme(t.slug)"
+            >{{ t.icon }}{{ t.name }}</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span>最佳观赏月份（AI 已自动勾选，可调整）</span>
+          <div class="chips">
+            <button
+              v-for="m in 12"
+              :key="m"
+              type="button"
+              class="chip month"
+              :class="{ active: draft.months.includes(m) }"
+              @click="toggleMonth(m)"
+            >{{ m }}月</button>
+          </div>
         </div>
 
         <div v-if="result.images.length" class="field">
           <span>选择要下载的图片（点选为封面，最多 9 张）</span>
           <div class="imgs">
             <label v-for="(img, i) in result.images" :key="img" class="imgpick">
-              <img :src="img" loading="lazy" @error="hideImg" />
+              <img :src="img" loading="lazy" referrerPolicy="no-referrer" @error="hideImg" />
               <div class="imgops">
                 <input type="checkbox" :value="img" v-model="pickedImages" />
                 <input type="radio" name="cover" :checked="coverImage === img" @change="coverImage = img" title="设为封面" />
@@ -85,7 +127,7 @@ AI_VISION_MODEL=glm-4v-plus</pre>
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../../api';
-import type { AdminConfig, AiExtractResult, AiDraft } from '../../types';
+import type { AdminConfig, AiExtractResult, AiDraft, Theme } from '../../types';
 import LocationPicker from '../../components/LocationPicker.vue';
 
 const router = useRouter();
@@ -103,25 +145,38 @@ const pickedImages = ref<string[]>([]);
 const coverImage = ref('');
 const location = ref<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
 
-const themesText = computed({
-  get: () => draft.themes.join('，'),
-  set: (v: string) => (draft.themes = v.split(/[，,、]/).map((s) => s.trim()).filter(Boolean)),
-});
-const monthsText = computed({
-  get: () => draft.months.join(','),
-  set: (v: string) =>
-    (draft.months = v
-      .split(/[，,、\s]+/)
-      .map((s) => parseInt(s, 10))
-      .filter((n) => n >= 1 && n <= 12)),
-});
+const themes = ref<Theme[]>([]);
+const originalText = ref('');
+const aiDescription = ref('');
+const descSource = ref<'original' | 'ai'>('ai');
+const photoCredit = ref('');
+
+const slugSet = computed(() => new Set(themes.value.map((t) => t.slug)));
+const nameToSlug = computed(() => new Map(themes.value.map((t) => [t.name, t.slug] as const)));
 
 onMounted(async () => {
   cfg.value = await api.admin.config();
+  themes.value = await api.themes().catch(() => []);
 });
 
 function hideImg(e: Event) {
   (e.target as HTMLImageElement).style.display = 'none';
+}
+
+function toggleTheme(slug: string) {
+  const i = draft.themes.indexOf(slug);
+  if (i >= 0) draft.themes.splice(i, 1);
+  else draft.themes.push(slug);
+}
+function toggleMonth(m: number) {
+  const i = draft.months.indexOf(m);
+  if (i >= 0) draft.months.splice(i, 1);
+  else draft.months.push(m);
+}
+
+function setDescSource(src: 'original' | 'ai') {
+  descSource.value = src;
+  draft.description = src === 'original' ? originalText.value : aiDescription.value;
 }
 
 function resetAll() {
@@ -131,7 +186,11 @@ function resetAll() {
   pickedImages.value = [];
   coverImage.value = '';
   location.value = { lat: null, lng: null };
-  Object.assign(draft, { name: '', description: '', address: '', region: '', themes: [], months: [], tips: '' });
+  originalText.value = '';
+  aiDescription.value = '';
+  descSource.value = 'ai';
+  photoCredit.value = '';
+  Object.assign(draft, { name: '', description: '', address: '', region: '', themes: [], months: [], tips: '', author: '' });
 }
 
 async function extract() {
@@ -144,6 +203,18 @@ async function extract() {
     Object.assign(draft, r.draft);
     pickedImages.value = r.images.slice(0, Math.min(6, r.images.length));
     coverImage.value = r.images[0] ?? '';
+    // 介绍：原文优先（短原文保留分段），否则 AI 整理稿
+    originalText.value = r.originalText || '';
+    aiDescription.value = r.draft.description || '';
+    descSource.value = r.useOriginal ? 'original' : 'ai';
+    draft.description = r.useOriginal ? originalText.value : aiDescription.value;
+    // AI 返回的主题名归一化为库内 slug，保证 chip 勾选与后端匹配一致
+    draft.themes = (r.draft.themes || [])
+      .map((n) => nameToSlug.value.get(n) || (slugSet.value.has(n) ? n : ''))
+      .filter(Boolean);
+    // 作者：来源页提取的博主昵称，默认同样作为图片署名
+    draft.author = r.draft.author || '';
+    photoCredit.value = draft.author;
   } catch (e) {
     error.value = e instanceof Error ? e.message : '提取失败';
   } finally {
@@ -163,6 +234,8 @@ async function doImport() {
     importing.value = true;
     const r = await api.admin.import({
       ...draft,
+      author: draft.author || '',
+      credit: photoCredit.value || draft.author || '',
       lat: location.value.lat,
       lng: location.value.lng,
       source_url: draft.source_url ?? (mode.value === 'url' ? url.value : ''),
@@ -252,10 +325,53 @@ h2 {
   font-weight: 600;
   margin-bottom: 5px;
 }
+.field > span em {
+  font-style: normal;
+  font-weight: 400;
+}
+.desc-toggle {
+  float: right;
+  display: inline-flex;
+  gap: 4px;
+}
+.desc-toggle button {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11.5px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.desc-toggle button.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.chip.active {
+  color: #fff;
+}
+.chip.month.active {
+  background: var(--primary);
+  border-color: var(--primary);
 }
 .imgs {
   display: flex;

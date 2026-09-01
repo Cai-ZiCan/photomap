@@ -93,6 +93,7 @@
           <img :src="p.thumb" />
           <div class="pinfo">
             <input class="cap" :value="p.caption" placeholder="图片说明（选填）" @change="savePhoto(p, $event)" />
+            <input class="cap" :value="p.credit" placeholder="图片作者（选填，前台显示署名）" @change="saveCredit(p, $event)" />
             <div class="pops">
               <button type="button" class="btn mini" @click="move(i, -1)" :disabled="i === 0">↑</button>
               <button type="button" class="btn mini" @click="move(i, 1)" :disabled="i === form.photos.length - 1">↓</button>
@@ -107,6 +108,32 @@
           </div>
         </div>
         <p v-if="!form.photos.length" class="muted">暂无照片，建议至少上传 1 张作为封面（地图悬停展示）。</p>
+
+        <h2 class="group-title">同点位关联</h2>
+        <p v-if="form.group_key" class="muted">
+          ✅ 已并入同一点位组：前台合并为一个图标（显示被并入的目标点位），详情栏可翻页查看组内每条记录。
+        </p>
+        <p v-else class="muted">
+          未手动并入的记录，按「名称相同」自动合并展示；空间相近但名称不同的，在下方逐条确认后手动并入 ——
+          <b>点哪条就只并入哪条</b>，不会影响其他记录。
+        </p>
+        <div v-if="!form.group_key && nearby.length" class="near-list">
+          <div v-for="n in nearby" :key="n.id" class="near-row">
+            <span class="near-name" :title="n.name">{{ n.name }}</span>
+            <span class="muted">{{ n.distance }}m · {{ statusLabel(n.status) }}</span>
+            <button
+              type="button"
+              class="btn mini"
+              :disabled="!canMergeInto(n)"
+              :title="mergeTitle(n)"
+              @click="mergeInto(n.id)"
+            >并入</button>
+          </div>
+        </div>
+        <p v-else-if="!form.group_key && nearbyLoaded && !nearby.length" class="muted">200 米内没有其他点位记录。</p>
+        <div v-if="form.group_key" class="pops">
+          <button type="button" class="btn mini" @click="unmerge">解除关联</button>
+        </div>
       </div>
     </form>
   </div>
@@ -118,7 +145,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../../api';
 import { loadAll, state } from '../../store';
-import type { SpotDetail, SpotPhoto } from '../../types';
+import type { NearbySpot, SpotDetail, SpotPhoto } from '../../types';
 import LocationPicker from '../../components/LocationPicker.vue';
 
 const route = useRoute();
@@ -146,8 +173,12 @@ const form = reactive({
   status: 'published',
   photos: [] as SpotPhoto[],
   featured_photo_id: null as number | null,
+  group_key: null as string | null,
 });
 const location = ref<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
+
+const nearby = ref<NearbySpot[]>([]);
+const nearbyLoaded = ref(false);
 
 onMounted(async () => {
   if (!state.loaded) await loadAll();
@@ -160,9 +191,52 @@ onMounted(async () => {
       return;
     }
     fillForm(s);
+    loadNearby();
   }
   ready.value = true;
 });
+
+async function loadNearby() {
+  try {
+    nearby.value = await api.admin.nearbySpots(id.value!);
+  } catch {
+    nearby.value = [];
+  } finally {
+    nearbyLoaded.value = true;
+  }
+}
+
+/** 已发布的点位不能并入未发布的：那样公开地图上看不出任何变化 */
+function canMergeInto(n: NearbySpot) {
+  return n.status === 'published' || form.status !== 'published';
+}
+function mergeTitle(n: NearbySpot) {
+  return canMergeInto(n)
+    ? `并入「${n.name}」`
+    : '目标未发布：并入后在公开地图不会生效，请先发布该点位';
+}
+
+async function mergeInto(targetId: number) {
+  error.value = '';
+  try {
+    const s = await api.admin.mergeSpot(id.value!, targetId);
+    form.group_key = s.group_key ?? null;
+    loadNearby();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '并入失败';
+  }
+}
+
+async function unmerge() {
+  error.value = '';
+  try {
+    const s = await api.admin.unmergeSpot(id.value!);
+    form.group_key = s.group_key ?? null;
+    loadNearby();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '解除关联失败';
+  }
+}
 
 function fillForm(s: SpotDetail) {
   form.name = s.name;
@@ -178,6 +252,7 @@ function fillForm(s: SpotDetail) {
   form.status = s.status;
   form.photos = s.photos;
   form.featured_photo_id = s.featured_photo_id;
+  form.group_key = s.group_key ?? null;
   location.value = { lat: s.lat, lng: s.lng };
 }
 
@@ -257,6 +332,12 @@ async function uploadPhotos(e: Event) {
 async function savePhoto(p: SpotPhoto, e: Event) {
   const caption = (e.target as HTMLInputElement).value;
   const s = await api.admin.updatePhoto(p.id, { caption });
+  form.photos = s.photos;
+}
+
+async function saveCredit(p: SpotPhoto, e: Event) {
+  const credit = (e.target as HTMLInputElement).value;
+  const s = await api.admin.updatePhoto(p.id, { credit });
   form.photos = s.photos;
 }
 
@@ -395,6 +476,27 @@ h2 {
   display: flex;
   gap: 5px;
   flex-wrap: wrap;
+}
+.group-title {
+  margin-top: 18px;
+}
+.near-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.near-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.near-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .muted {
   color: var(--muted);

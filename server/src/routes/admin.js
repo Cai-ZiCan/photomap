@@ -114,10 +114,11 @@ function spotWithRelations(spot) {
   };
 }
 
-function applyThemes(spotId, slugs) {
+function applyThemes(spotId, themeKeys) {
   run('DELETE FROM spot_themes WHERE spot_id = ?', spotId);
-  for (const slug of slugs) {
-    const t = q1('SELECT id FROM themes WHERE slug = ?', slug);
+  for (const key of themeKeys) {
+    // 兼容传入 slug 或中文主题名（AI 提取返回的是中文名）
+    const t = q1('SELECT id FROM themes WHERE slug = ? OR name = ?', key, key);
     if (t) run('INSERT OR IGNORE INTO spot_themes(spot_id, theme_id) VALUES(?, ?)', spotId, t.id);
   }
 }
@@ -224,9 +225,12 @@ r.post('/spots/:id/status', requireAdmin, (req, res) => {
      WHERE id = ?`,
     status, note, note, status, id
   );
-  // 网友投稿通过发布时，投稿人昵称即为图片作者，自动补署名（不覆盖已填写的 credit）
-  if (status === 'published' && spot.source === 'user' && spot.submitter_name) {
-    run("UPDATE photos SET credit = ? WHERE spot_id = ? AND (credit IS NULL OR credit = '')", `@${spot.submitter_name}`, id);
+  // 网友投稿/链接导入发布时，投稿人/原文作者即图片作者，自动补署名（不覆盖已填写的 credit）
+  if (status === 'published' && (spot.source === 'user' || spot.source === 'crawler') && spot.submitter_name) {
+    const author = String(spot.submitter_name).replace(/^@/, '').trim();
+    if (author) {
+      run("UPDATE photos SET credit = ? WHERE spot_id = ? AND (credit IS NULL OR credit = '')", `@${author}`, id);
+    }
   }
   res.json(spotWithRelations(q1('SELECT * FROM spots WHERE id = ?', id)));
 });
@@ -339,40 +343,62 @@ r.delete('/themes/:id', requireAdmin, (req, res) => {
 
 /* ---------- AI 提取与导入 ---------- */
 
+/** 原文超过该长度时建议用 AI 重写，而非整段保留 */
+const ORIGINAL_TEXT_MAX = 800;
+
 r.post('/ai-extract', requireAdmin, async (req, res) => {
   const b = req.body || {};
   const url = str(b.url, 500);
   const text = str(b.text, 20000);
   if (!url && !text) throw badReq('请填写网页链接或粘贴文本');
 
-  let source = { url: '', title: '', text, images: [] };
+  const themeCandidates = q('SELECT slug, name FROM themes ORDER BY sort, id');
+  let source = { url: '', title: '', text, author: '', images: [] };
   if (url) {
     const page = await fetchPage(url);
     if (page.type === 'image') {
-      source = { url, title: '', text: text || '', images: [page.url] };
+      source = { url, title: '', text: text || '', author: '', images: [page.url] };
     } else {
-      source = { url: page.url, title: page.title, text: [text, page.text].filter(Boolean).join('\n'), images: page.images };
+      source = {
+        url: page.url,
+        title: page.title,
+        text: [text, page.text].filter(Boolean).join('\n'),
+        author: page.author || '',
+        images: page.images,
+      };
     }
   }
-  const draft = await extractSpot({ text: source.text, images: source.images });
+  const draft = await extractSpot({ text: source.text, images: source.images, themeCandidates });
+  draft.author = source.author || draft.author || '';
+  const originalText = source.text || '';
   res.json({
     draft: { ...draft, source_url: source.url },
     title: source.title,
     images: source.images,
+    originalText,
+    useOriginal: originalText.length > 0 && originalText.length <= ORIGINAL_TEXT_MAX,
   });
 });
 
 r.post('/import', requireAdmin, async (req, res) => {
   const b = req.body || {};
   const { fields, themeSlugs } = extractSpotBody(b);
+  // 原文作者/博主昵称：作者即文案作者（submitter_name），也默认作为图片署名
+  const author = str(b.author, 40);
+  if (author && !fields.submitter_name) fields.submitter_name = author;
+  const credit = str(b.credit, 100) || author;
   const images = Array.isArray(b.images) ? b.images.map((u) => String(u)).filter((u) => /^https?:\/\//.test(u)).slice(0, config.upload.maxFiles) : [];
   const fromUrl = str(b.source_url, 500);
+  let downloadReferer = '';
+  if (fromUrl) {
+    try { downloadReferer = new URL(fromUrl).origin; } catch { /* 非法链接则不带 Referer */ }
+  }
 
   const info = run(
     `INSERT INTO spots (name, description, lat, lng, address, region, tips, months, status, source,
-                        source_url, source_note, review_note)
+                        source_url, source_note, review_note, submitter_name, submitter_contact)
      VALUES (@name, @description, @lat, @lng, @address, @region, @tips, @months,
-             'pending', @source, @source_url, @source_note, @review_note)`,
+             'pending', @source, @source_url, @source_note, @review_note, @submitter_name, @submitter_contact)`,
     {
       ...fields,
       source: fromUrl ? 'crawler' : 'creator',
@@ -388,9 +414,9 @@ r.post('/import', requireAdmin, async (req, res) => {
   let featured = null;
   for (let i = 0; i < images.length; i++) {
     try {
-      const img = await downloadImage(images[i]);
+      const img = await downloadImage(images[i], downloadReferer);
       const saved = await saveImage(img.buffer, img.contentType);
-      const pi = run('INSERT INTO photos(spot_id, path, sort) VALUES(?, ?, ?)', id, saved.path, i);
+      const pi = run('INSERT INTO photos(spot_id, path, caption, credit, sort) VALUES(?, ?, ?, ?, ?)', id, saved.path, '', credit, i);
       if (i === 0) featured = Number(pi.lastInsertRowid);
     } catch (e) {
       errors.push(e.message);
@@ -407,6 +433,71 @@ r.post('/import', requireAdmin, async (req, res) => {
     imageErrors: errors,
     spot: spotWithRelations(q1('SELECT * FROM spots WHERE id = ?', id)),
   });
+});
+
+/* ---------- 同点位归组 ---------- */
+
+/** 空间相近提示阈值（米）：仅作管理端提示，是否并入由制作者确认 */
+const NEARBY_METERS = 200;
+
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLng = (lng2 - lng1) * rad;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+r.get('/spots/:id/nearby', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const spot = q1('SELECT * FROM spots WHERE id = ?', id);
+  if (!spot) throw badReq('点位不存在');
+  const nearby = q('SELECT id, name, lat, lng, status, source, group_key FROM spots WHERE id != ?', id)
+    .map((o) => ({ ...o, distance: Math.round(haversineMeters(spot.lat, spot.lng, o.lat, o.lng)) }))
+    .filter((o) => o.distance <= NEARBY_METERS)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 10);
+  res.json(nearby);
+});
+
+r.post('/spots/:id/merge', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const targetId = Number(req.body?.into);
+  if (!targetId || targetId === id) throw badReq('目标点位无效');
+  const source = q1('SELECT * FROM spots WHERE id = ?', id);
+  if (!source) throw badReq('点位不存在');
+  const target = q1('SELECT * FROM spots WHERE id = ?', targetId);
+  if (!target) throw badReq('目标点位不存在');
+  // 已发布并入未发布 = 公开地图上完全不生效（未发布的点位不参与归组），
+  // 表现就是「归并完了，被归并的点位在地图上照旧单独显示」。直接拦掉并给出指引。
+  if (source.status === 'published' && target.status !== 'published') {
+    throw badReq(`目标点位「${target.name}」尚未发布，并入后不会在地图上生效；请先发布它，或改并入一个已发布的点位`);
+  }
+  // 目标若已被并入别处，则并入它所在的组，避免 A→B、B→A 形成互指
+  const key = target.group_key || `g:${targetId}`;
+  if (target.group_key && target.group_key === `g:${id}`) {
+    throw badReq('目标点位已并入当前点位，无需重复并入');
+  }
+  run("UPDATE spots SET group_key = ?, updated_at = datetime('now','localtime') WHERE id = ?", key, id);
+  if (!target.group_key) run("UPDATE spots SET group_key = ?, updated_at = datetime('now','localtime') WHERE id = ?", key, target.id);
+  res.json(spotWithRelations(q1('SELECT * FROM spots WHERE id = ?', id)));
+});
+
+r.post('/spots/:id/unmerge', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const spot = q1('SELECT * FROM spots WHERE id = ?', id);
+  if (!spot) throw badReq('点位不存在');
+  const key = spot.group_key;
+  if (key) {
+    run("UPDATE spots SET group_key = NULL, updated_at = datetime('now','localtime') WHERE id = ?", id);
+    // 组里只剩一条时把残留的 group_key 一并清掉：
+    // 否则那条会一直带着 group_key，从而永远退出「同名自动归组」。
+    const rest = q('SELECT id FROM spots WHERE group_key = ?', key);
+    if (rest.length <= 1) {
+      run("UPDATE spots SET group_key = NULL, updated_at = datetime('now','localtime') WHERE group_key = ?", key);
+    }
+  }
+  res.json(spotWithRelations(q1('SELECT * FROM spots WHERE id = ?', id)));
 });
 
 /* ---------- 数据管理 ---------- */

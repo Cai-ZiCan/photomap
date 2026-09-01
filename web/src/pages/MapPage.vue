@@ -22,7 +22,7 @@
         <button class="btn" @click="loadAll">重试</button>
       </div>
 
-      <DetailPanel v-if="state.selectedId" :id="state.selectedId" @close="closePanel" />
+      <DetailPanel v-if="state.selectedId" :id="state.selectedId" @close="closePanel" @navigate="onSelect" />
     </div>
   </div>
 </template>

@@ -1,6 +1,6 @@
 import { computed, reactive } from 'vue';
 import { api } from './api';
-import type { SpotListItem, Theme } from './types';
+import type { SpotListItem, SpotSibling, Theme } from './types';
 
 export interface Filters {
   themes: string[];
@@ -17,6 +17,12 @@ export const state = reactive({
   basemapId: 'gaode',
   filters: { themes: [], months: [], q: '' } as Filters,
   selectedId: null as number | null,
+  /**
+   * 同位置（坐标相同或极近）的所有记录：选择浮层打开时由 MapView 写入，
+   * 供详情面板的翻页器跨「未合并的同位置」记录导航。
+   * Key 为组内任意一条记录 id，Value 为完整列表（含自身）。
+   */
+  coLocatedById: {} as Record<number, SpotSibling[]>,
 });
 
 function matchQ(spot: SpotListItem, q: string) {

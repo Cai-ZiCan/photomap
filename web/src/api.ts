@@ -1,5 +1,5 @@
 import type {
-  AdminConfig, AdminState, AiExtractResult, ImportResult, Overview, SpotDetail, Theme,
+  AdminConfig, AdminState, AiExtractResult, ImportResult, NearbySpot, Overview, SpotDetail, SpotListItem, Theme,
 } from './types';
 
 async function handle<T>(res: Response): Promise<T> {
@@ -66,6 +66,9 @@ export const api = {
     deleteTheme: (id: number) => del<Theme[]>(`/api/admin/themes/${id}`),
     aiExtract: (b: { url?: string; text?: string }) => post<AiExtractResult>('/api/admin/ai-extract', b),
     import: (b: Record<string, unknown>) => post<ImportResult>('/api/admin/import', b),
+    nearbySpots: (id: number) => get<NearbySpot[]>(`/api/admin/spots/${id}/nearby`),
+    mergeSpot: (id: number, into: number) => post<SpotDetail>(`/api/admin/spots/${id}/merge`, { into }),
+    unmergeSpot: (id: number) => post<SpotDetail>(`/api/admin/spots/${id}/unmerge`),
     clearSeed: () => post<{ ok: boolean; removed: number }>('/api/admin/clear-seed'),
     reseed: () => post<{ ok: boolean }>('/api/admin/reseed'),
     changePassword: (oldPassword: string, newPassword: string) =>
